@@ -1,36 +1,96 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Обжарка кофе «Кварта» (Минск) — Тестовое задание Junior+
 
-## Getting Started
+Живой сайт: [https://kvarta-coffee.vercel.app](https://kvarta-coffee.vercel.app) *(деплой на Vercel)*  
+Репозиторий: [https://github.com/whoami-28/VitAi-test.git](https://github.com/whoami-28/VitAi-test.git)
 
-First, run the development server:
+Лендинг для минской ремесленной обжарки спешелти кофе «Кварта» с работающим бэкендом приема заявок, валидацией белорусских номеров телефонов, защитой от дублей, сквозной UTM-аналитикой и интеграцией с Telegram Bot API.
+
+---
+
+## Стек технологий
+
+* **Frontend:** Next.js 14+ (App Router, React 19, Server & Client Components), TypeScript.
+* **Styling:** Tailwind CSS (кастомная палитра: тёплый песочный `#FAF8F5`, жжёная терракота `#C14E28`, оливковый `#2E5C38`, глубокий кофейно-угольный `#1F1A17`).
+* **Типографика:** Google Fonts (`Cormorant Garamond` для заголовков с засечками, `Plus Jakarta Sans` для интерфейсного текста).
+* **Иконки:** `lucide-react` (минималистичные контурные иконки, без тяжелых UI-библиотек).
+* **Валидация:** `Zod` (строгая типизация схемы запроса) + кастомный парсер номеров операторов РБ (+375).
+* **Бэкенд & Хранилище:** Next.js Route Handlers (`POST /api/lead`), адаптер файлового хранилища (`StorageAdapter`) + мгновенный пуш в Telegram Bot API.
+* **Деплой:** Vercel.
+
+---
+
+## Архитектурные решения и выбор хранилища
+
+### 1. Проблема файловой системы на Vercel и решение `StorageAdapter`
+На платформе Vercel код исполняется в изолированных Serverless Functions (AWS Lambda). Главное ограничение этой среды — файловая система доступна **только для чтения (`read-only`)**, кроме временного каталога `/tmp`. Попытка записать в `./data/leads.json` или локальный файл SQLite в корне проекта в продакшене приводит к фатальной ошибке `EROFS: read-only file system`. Кроме того, каталог `/tmp` очищается при перезапуске контейнеров (cold start).
+
+**Решение:**
+1. Разработан отказоустойчивый адаптер `lib/storage.ts`:
+   * В среде разработки (`development`) данные сохраняются в локальный JSON-файл в папке `data/leads.json`.
+   * В продакшене на Vercel (`production`) данные безопасно логируются в `/tmp/leads.json` без падений рантайма.
+2. Для гарантированной сохранности лидов подключен **Telegram Bot API**: каждая заявка в момент поступления форматируется и мгновенно отправляется бариста/менеджеру в Telegram. Это исключает потерю клиентов даже при полной перезагрузке бессерверных контейнеров.
+
+### 2. Защита от дублей (10 минут) и дабл-клика
+В модуле `lib/anti-duplicate.ts` реализована in-memory хеш-таблица с фиксацией времени последней отправки по номеру телефона:
+* Повторное нажатие на кнопку отправки блокируется как на клиенте (disabled состояние кнопки с индикатором загрузки), так и на сервере.
+* Если с одного номера заявка уже поступала в течение последних 10 минут, API возвращает статус **HTTP 429 (Too Many Requests)** с информативным сообщением о времени ожидания.
+
+### 3. Строгая валидация номеров телефонов Беларуси
+Модуль `lib/phone-validator.ts` проверяет:
+* Префикс страны `+375` (поддерживается автозамена устаревшего формата `80...`).
+* Коды всех действующих белорусских операторов: `25` (life:)), `29` (A1, МТС), `33` (МТС), `44` (A1).
+* Фиксированную длину (ровно 12 цифр).
+* Интерактивную live-маску на клиенте: `+375 (XX) XXX-XX-XX`.
+
+### 4. Сквозная UTM-аналитика и реферер
+Модуль `lib/utm.ts` при первом заходе пользователя перехватывает параметры `utm_source`, `utm_medium`, `utm_campaign`, `utm_content`, `utm_term` и `document.referrer`, кэшируя их в `sessionStorage`. Даже если пользователь переходит по якорным ссылкам лендинга, метки не теряются и прикрепляются к отправляемой заявке.
+
+---
+
+## Рефлексия по работе с ИИ (AI Reflection)
+
+* **Что делали сами:**
+  * Проектирование системной архитектуры и выбор паттерна работы с Serverless-хранилищем на Vercel.
+  * Разработка точной цветовой палитры и системы отступов на основе предоставленного дизайн-макета `screen.png`.
+  * Реализация логики защиты от дублей по скользящему 10-минутному окну и очистки кэша по TTL.
+  * Тестирование краевых случаев валидации телефонов белорусских операторов.
+  * Настройка превью ссылок Open Graph (`opengraph-image.tsx`), `sitemap.ts` и `robots.ts`.
+
+* **Что делал ИИ:**
+  * Генерация атмосферных фотоматериалов в репортажном крафтовом стиле 35mm плёнки (фото основателей Ани и Дмитрия возле ростера, руки бариста, крафтовые пачки).
+  * Подготовка базовых регулярок и шаблона форматирования маски телефонного номера.
+  * Черновые наброски Zod-схемы валидации.
+
+* **Где ИИ ошибся и как это заметили:**
+  1. *Ошибка рантайма Vercel:* ИИ изначально предложил стандартную синхронную запись `fs.writeFileSync('./data/leads.json')`. При деплое на Vercel это вызвало бы `EROFS: read-only file system`. Ошибка была предотвращена внедрением безопасного пути `/tmp` и Telegram-оповещений.
+  2. *Несовместимость Zod v4:* При использовании Zod v4 метод `.errors` был заменен на `.issues`, а `required_error` в типах строк устарел. Это было оперативно выявлено и исправлено на этапе компиляции TypeScript.
+  3. *Генерация OpenGraph шрифтов:* В генераторе `ImageResponse` символ эмодзи/звёздочки `★` вызвал сбой загрузки системного шрифта Google Fonts (400 Bad Request). Заменили на чистый CSS и текстовые бейджи.
+
+* **Что не успели или сделали бы иначе:**
+  * Добавили бы прямую синхронизацию лидов с Google Sheets через Service Account для удобства маркетолога.
+  * Подключили бы полноценную персистентную базу данных Turso (Serverless SQLite over libSQL) или Neon Postgres при масштабировании на объемы более 1 000 заявок в день.
+
+---
+
+## Локальный запуск и тестирование
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+# 1. Клонирование репозитория
+git clone https://github.com/whoami-28/VitAi-test.git
+cd VitAi-test
+
+# 2. Установка зависимостей
+npm install
+
+# 3. Настройка переменных окружения (опционально для Telegram)
+cp .env.example .env.local
+
+# 4. Запуск тестов валидации, антидубля и хранилища
+npm run test:logic
+
+# 5. Сборка и запуск проекта
+npm run build
+npm run start
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
-
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
-
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Сайт будет доступен по адресу `http://localhost:3000`.
